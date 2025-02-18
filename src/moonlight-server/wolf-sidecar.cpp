@@ -454,53 +454,34 @@ void run() {
 
   auto local_state = initialize(config_file, p_key_file, p_cert_file);
 
-  // HTTP APIs
-  auto http_thread = std::thread([local_state]() {
-    HttpServer server = HttpServer();
-    HTTPServers::startServer(&server, local_state, state::HTTP_PORT);
-  });
+  // // HTTP APIs
+  // auto http_thread = std::thread([local_state]() {
+  //   HttpServer server = HttpServer();
+  //   HTTPServers::startServer(&server, local_state, state::HTTP_PORT);
+  // });
 
-  // HTTPS APIs
-  std::thread([local_state, p_key_file, p_cert_file]() {
-    HttpsServer server = HttpsServer(p_cert_file, p_key_file);
-    HTTPServers::startServer(&server, local_state, state::HTTPS_PORT);
-  }).detach();
+  // // HTTPS APIs
+  // std::thread([local_state, p_key_file, p_cert_file]() {
+  //   HttpsServer server = HttpsServer(p_cert_file, p_key_file);
+  //   HTTPServers::startServer(&server, local_state, state::HTTPS_PORT);
+  // }).detach();
 
-  // RTSP
-  std::thread([sessions = local_state->running_sessions]() {
-    rtsp::run_server(state::RTSP_SETUP_PORT, sessions);
-  }).detach();
+  // // RTSP
+  // std::thread([sessions = local_state->running_sessions]() {
+  //   rtsp::run_server(state::RTSP_SETUP_PORT, sessions);
+  // }).detach();
 
   // Control
-  std::thread([sessions = local_state->running_sessions, ev_bus = local_state->event_bus]() {
+  auto control_thread = std::thread([sessions = local_state->running_sessions, ev_bus = local_state->event_bus]() {
     control::run_control(state::CONTROL_PORT, sessions, ev_bus);
-  }).detach();
-
-  // Wolf API server
-  std::thread([local_state]() { wolf::api::start_server(local_state); }).detach();
-
-  // mDNS
-  std::thread([hostname = local_state->config->hostname]() {
-    logs::log(logs::info, "Starting mDNS service");
-    try {
-      mdns_cpp::Logger::setLoggerSink([](const std::string &msg) {
-        // msg here will include a /n at the end, so we remove it
-        logs::log(logs::trace, "mDNS: {}", msg.substr(0, msg.size() - 1));
-      });
-      mdns_cpp::mDNS mdns;
-      mdns.setServiceName("_nvstream._tcp.local.");
-      mdns.setServiceHostname(hostname);
-      mdns.setServicePort(state::HTTP_PORT);
-      mdns.startService(false);
-    } catch (const std::exception &e) {
-      logs::log(logs::error, "mDNS error: {}", e.what());
-    }
   }).detach();
 
   auto audio_server = setup_audio_server(runtime_dir);
   auto sess_handlers = setup_sessions_handlers(local_state, runtime_dir, audio_server);
 
-  http_thread.join(); // Let's park the main thread over here
+  // TODO: start the session
+
+  control_thread.join(); // Let's park the main thread over here
 }
 
 int main(int argc, char *argv[]) try {
