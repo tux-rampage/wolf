@@ -102,7 +102,8 @@ void run_control(int port,
                  const std::shared_ptr<events::EventBusType> &event_bus,
                  int peers,
                  std::chrono::milliseconds timeout,
-                 const std::string &host_ip) {
+                 const std::string &host_ip,
+                 const std::optional<std::string> sessionId) {
 
   enet_host host = create_host(host_ip, port, peers);
   logs::log(logs::info, "Control server started on port: {}", port);
@@ -124,7 +125,10 @@ void run_control(int port,
   while (true) {
     if (enet_host_service(host.get(), &event, timeout.count()) > 0) {
       auto [client_ip, client_port] = get_ip((sockaddr *)&event.peer->address.address);
-      auto client_session = state::get_session_by_ip(running_sessions->load(), client_ip);
+      std::optional<events::StreamSession> client_session = sessionId
+        ? state::get_session_by_id(running_sessions->load(), *sessionId)
+        : state::get_session_by_ip(running_sessions->load(), client_ip);
+      
       if (client_session) {
         switch (event.type) {
         case ENET_EVENT_TYPE_NONE:
