@@ -180,3 +180,10 @@ target_link_libraries(wolf wolf::runner
         #-static # enable to statically link all libraries
 )
 target_compile_features(wolf PRIVATE cxx_std_17)
+
+add_executable(wolf-sidecar wolf-sidecar.cpp)
+target_link_libraries(wolf-sidecar wolf::runner
+        #-static # enable to statically link all libraries
+)
+target_compile_features(wolf PRIVATE cxx_std_17)
+target_compile_features(wolf-sidecar PRIVATE cxx_std_17)

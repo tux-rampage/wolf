@@ -91,7 +91,6 @@ auto initialize(std::string_view config_file, std::string_view pkey_filename, st
 
 struct AudioServer {
   std::shared_ptr<audio::Server> server;
-  std::optional<docker::Container> container = {};
 };
 
 /**
@@ -430,6 +429,35 @@ auto setup_sessions_handlers(const immer::box<state::AppState> &app_state,
   return handlers.persistent();
 }
 
+auto create_run_session(
+  const std::string &display_mode_line,
+  const std::string &client_ip,
+  const std::string &aes_key,
+  const std::string &aes_iv,
+  const state::PairedClient &current_client,
+  immer::box<state::AppState> state,
+  const events::App &run_app
+) {
+  // auto display_mode_str = utils::split(get_header(headers, "mode").value_or("1920x1080x60"), 'x');
+  auto display_mode_str = utils::split(display_mode_line, 'x');
+  moonlight::DisplayMode display_mode = {std::stoi(display_mode_str[0].data()),
+                    std::stoi(display_mode_str[1].data()),
+                    std::stoi(display_mode_str[2].data()),
+                    state->config->support_hevc,
+                    state->config->support_av1};
+
+  auto surround_info = 196610;
+  int channelCount = surround_info & (0xffff /* last 16 bits */);
+
+  auto base_session = create_stream_session(state, run_app, current_client, display_mode, channelCount);
+
+  base_session->ip = client_ip;
+  base_session->aes_key = aes_key;
+  base_session->aes_iv = aes_iv;
+
+  return std::move(base_session);
+}
+
 /**
  * @brief here's where the magic starts
  */
@@ -443,6 +471,14 @@ void run() {
   auto config_file = utils::get_env("WOLF_CFG_FILE", "config.toml");
   auto p_key_file = utils::get_env("WOLF_PRIVATE_KEY_FILE", "key.pem");
   auto p_cert_file = utils::get_env("WOLF_PRIVATE_CERT_FILE", "cert.pem");
+
+  auto client_id = utils::get_env("WOLF_RUN_CLIENT");
+  auto client_ip = utils::get_env("WOLF_RUN_CLIENT_IP");
+  auto app_id = utils::get_env("WOLF_RUN_APP_IP");
+  auto display_mode = utils::get_env("WOLF_RUN_DISPLAY_MODE", "1920x1080x60");
+  auto aes_key = utils::get_env("WOLF_RUN_AESKEY");
+  auto aes_iv = utils::get_env("WOLF_RUN_AESIV");
+
   auto receiver_ip = utils::get_env("WOLF_RECEIVER_HOST");
   auto receiver_video_port = utils::get_env("WOLF_RECEIVER_VIDEO_PORT");
   auto receiver_audio_port = utils::get_env("WOLF_RECEIVER_AUDIO_PORT");
@@ -454,32 +490,29 @@ void run() {
 
   auto local_state = initialize(config_file, p_key_file, p_cert_file);
 
-  // // HTTP APIs
-  // auto http_thread = std::thread([local_state]() {
-  //   HttpServer server = HttpServer();
-  //   HTTPServers::startServer(&server, local_state, state::HTTP_PORT);
-  // });
-
-  // // HTTPS APIs
-  // std::thread([local_state, p_key_file, p_cert_file]() {
-  //   HttpsServer server = HttpsServer(p_cert_file, p_key_file);
-  //   HTTPServers::startServer(&server, local_state, state::HTTPS_PORT);
-  // }).detach();
-
-  // // RTSP
-  // std::thread([sessions = local_state->running_sessions]() {
-  //   rtsp::run_server(state::RTSP_SETUP_PORT, sessions);
-  // }).detach();
-
   // Control
   auto control_thread = std::thread([sessions = local_state->running_sessions, ev_bus = local_state->event_bus]() {
     control::run_control(state::CONTROL_PORT, sessions, ev_bus);
-  }).detach();
+  });
+
+  control_thread.detach();
 
   auto audio_server = setup_audio_server(runtime_dir);
   auto sess_handlers = setup_sessions_handlers(local_state, runtime_dir, audio_server);
 
+
   // TODO: start the session
+  auto client = state::get_client_by_id(local_state->config, client_id);
+  auto app = state::get_app_by_id(local_state->config, app_id);
+
+  if (!client || !app) {
+    logs::log(logs::error, "Client or app not found");
+    std::exit(1);
+  }
+  
+  logs::log(logs::info, "Starting session for client {} and app {}", client_id, app_id);
+  auto session = create_run_session(display_mode, client_ip, aes_key, aes_iv, *client, local_state, *app);
+
 
   control_thread.join(); // Let's park the main thread over here
 }

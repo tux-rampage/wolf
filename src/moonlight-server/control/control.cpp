@@ -103,7 +103,7 @@ void run_control(int port,
                  int peers,
                  std::chrono::milliseconds timeout,
                  const std::string &host_ip,
-                 const std::optional<std::string> sessionId) {
+                 const std::optional<std::size_t> sessionId) {
 
   enet_host host = create_host(host_ip, port, peers);
   logs::log(logs::info, "Control server started on port: {}", port);
